@@ -3,21 +3,27 @@
 #include<search.h>
 #define MAX_FILE_SIZE 200*sizeof(char)
 
-__global__ void getWordCounts(char *fileArray,int *countArray,int *fileSize){
+__global__ void getWordCounts(char *fileArray,int *countArray,int *fileSize,int *hashtable){
   unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
   int ind,word_started =0 ,count =0;
+  int hashvalue;
   char *ptr,*wptr;
   ptr = &fileArray[i*200];int  tempi=0;
   for(ind =0;ind<fileSize[i];ind++){
-    if((ptr[ind]!=' '&&ptr[ind]!='.'&&ptr[ind]!='!')&&word_started!=1)
-      {word_started = 1;wptr=ptr}
+    if(ptr[ind]!=' '&&ptr[ind]!='.'&&ptr[ind]!='!')
+      if(word_started!=1) {word_started = 1;hashvalue = (ptr[ind]>64&&ptr[ind]<91) ? ptr[ind]+32:ptr[ind];}
+      else{
+	hashvalue+= (ptr[ind]>64&&ptr[ind]<91) ? ptr[ind]+32:ptr[ind];
+      }
     if(word_started)
       if(ptr[ind]==' '||ptr[ind]=='.'||ptr[ind]=='!'){
         word_started = 0;
+	hashvalue = hashvalue % 100;
 	count++;
+	break;//temmporary for testing
       }
   }
-  countArray[i] = count; 
+  countArray[i] = hashvalue; 
 }
 
 int main(int argc,char **argv){
@@ -28,6 +34,7 @@ int main(int argc,char **argv){
   int *dcountArray;
   int *fileSize;
   int *dfileSize;
+  
   int noOfFiles=0;
   FILE *fp;
 
