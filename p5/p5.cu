@@ -2,14 +2,19 @@
 #include<stddef.h>
 #include<search.h>
 #include<device_functions.h>
-#define MAX_FILE_SIZE 200*sizeof(char)
+#define MAX_FILE_SIZE 200
+#define MAX_HASH_ENTRIES 200
+#define M 10
 
-__global__ void getWordCounts(char *fileArray,int *countArray,int *fileSize,char *wordhashtable){
+__global__ void getWordCounts(char *fileArray,int *countArray,int *fileSize,char *wordhashtable, int *nextPtr){
   unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
   int ind,word_started =0 ,count =0;
+  int found;
   int hashvalue;
   char *ptr,*wptr,*temp;
-  ptr = &fileArray[i*200];int  tempi=0;
+  ptr = &fileArray[i*MAX_FILE_SIZE];
+  int  tempi=0,tempi2;
+
   for(ind =0;ind<fileSize[i];ind++){
     if(ptr[ind]!=' '&&ptr[ind]!='.'&&ptr[ind]!='!')
       if(word_started!=1) {
@@ -23,15 +28,53 @@ __global__ void getWordCounts(char *fileArray,int *countArray,int *fileSize,char
     if(word_started)
       if(ptr[ind]==' '||ptr[ind]=='.'||ptr[ind]=='!'){
         word_started = 0;
-	hashvalue = hashvalue % 100;
-	if(wordhashtable[hashvalue*20]=='\0'){
-	temp = &wordhashtable[hashvalue*20];tempi =0;
-	while(&wptr[tempi]!=&ptr[ind]){temp[tempi]=wptr[tempi];tempi++;}///TODO: MAKE ATOMIC!!!
+	hashvalue = hashvalue % M;// 10 here is hashtable size M
+	
+	if(wordhashtable[hashvalue*20]=='\0'){//Not found in Hash
+	  temp = &wordhashtable[hashvalue*20];
+	  tempi =0;
+	  while(&wptr[tempi]!=&ptr[ind])
+		{temp[tempi]= wptr[tempi];
+		tempi++;}
+	  atomicAdd(&countArray[hashvalue],1);//count
 	}
-	atomicAdd(&countArray[hashvalue],1);
+	else{//Collision detection
+	  tempi =hashvalue;found = -1;
+
+	  while(nextPtr[tempi]!=-1||found==-1){
+	    tempi2 = 0;
+	    found =1;
+	    temp = &wordhashtable[tempi*20];
+	    while(&wptr[tempi2]!=&ptr[ind]){
+	      if(temp[tempi2]!=wptr[tempi2]) {found =0;break;}
+	      tempi2++;
+	    }
+	    if(found) break;
+	    if(nextPtr[tempi]!=-1)
+	       	tempi = nextPtr[tempi];      
+	  }
+
+	  if(found)
+	    atomicAdd(&countArray[tempi],1);
+		//countArray[tempi]=hashvalue;}//DEBUG
+	  else{//Collision but record not found
+	    tempi2 =0;
+	    while(wordhashtable[(M+tempi2)*20]!='\0' && tempi2<MAX_HASH_ENTRIES) tempi2++;//10 = M; tempi2 holds location in hast tab;e
+	    if(tempi2 < MAX_HASH_ENTRIES){
+	    	nextPtr[tempi] = tempi2+M;tempi=0;//tempi holds the location where last hash was found
+	        temp = &wordhashtable[(M+tempi2)*20];
+		while(&wptr[tempi]!=&ptr[ind])
+			{temp[tempi]=wptr[tempi]; 
+			tempi++;}
+		atomicAdd(&countArray[tempi2+M],1);
+		//countArray[tempi2+10]=hashvalue;//DEBUG
+	    }//count*/
+	  }
+
+	}
+	//atomicAdd(&countArray[hashvalue],1);
 	//atomicExch(&countArray[hashvalue],hashvalue);
 	count++;
-	//break;//temmporary for testing
       }
   }
   //countArray[i] = hashvalue; 
@@ -47,21 +90,28 @@ int main(int argc,char **argv){
   int *dfileSize;
   char *hashtable; 
   char *dhashtable; 
+  int *nextPtr;
+  int *dnextPtr;
   int noOfFiles=0;
   FILE *fp;
 
   char *temp;int itemp=0;
   filename =(char*) malloc (10*sizeof(char));
-  fileArray=(char*) malloc(10*MAX_FILE_SIZE);
-  countArray =(int*) malloc (200*sizeof(int));//corresponding counts of words
+  fileArray=(char*) malloc(10*MAX_FILE_SIZE*sizeof(char));
+  countArray =(int*) malloc (MAX_HASH_ENTRIES*sizeof(int));//corresponding counts of words
   fileSize =(int*) malloc (10*sizeof(int));
-  hashtable=(char*) malloc(20*200*sizeof(char));
-  cudaMalloc((void**)&dfileArray,10*MAX_FILE_SIZE);
-  cudaMalloc((void**)&dcountArray,200*sizeof(int));//corresponding counts of words
+  hashtable=(char*) malloc(20*MAX_HASH_ENTRIES*sizeof(char));
+  nextPtr = (int*) malloc (MAX_HASH_ENTRIES*sizeof(int));
+
+  cudaMalloc((void**)&dfileArray,10*MAX_FILE_SIZE*sizeof(char));
+  cudaMalloc((void**)&dcountArray,MAX_HASH_ENTRIES*sizeof(int));//corresponding counts of words
   cudaMalloc((void**)&dfileSize,10*sizeof(int));
-  cudaMalloc((void**)&dhashtable,20*200*sizeof(char));//20-max word size 500-max words
-  cudaMemset(dcountArray,0,200*sizeof(int));
-  cudaMemset(dhashtable,'\0',20*200*sizeof(char));
+  cudaMalloc((void**)&dhashtable,20*MAX_HASH_ENTRIES*sizeof(char));//20-max word size 500-max words
+  cudaMalloc((void**)&dnextPtr,MAX_HASH_ENTRIES*sizeof(int));//corresponding counts of words
+
+  cudaMemset(dcountArray,0,MAX_HASH_ENTRIES*sizeof(int));
+  cudaMemset(dhashtable,'\0',20*MAX_HASH_ENTRIES*sizeof(char));
+  cudaMemset(dnextPtr,-1,MAX_HASH_ENTRIES*sizeof(int));
   
   while(scanf("%s",filename)!=EOF){
     printf("\nAttempting to open %s",filename);
@@ -70,7 +120,7 @@ int main(int argc,char **argv){
 	        perror("failed to open sample.txt");
         	exit(0) ;//EXIT_FAILURE;
     }
-    fread(&fileArray[noOfFiles*200],MAX_FILE_SIZE,1,fp);
+    fread(&fileArray[noOfFiles*200],MAX_FILE_SIZE*sizeof(char),1,fp);
     fileSize[noOfFiles]=ftell(fp);
     fclose(fp);fp = NULL;
     noOfFiles++;
@@ -81,9 +131,9 @@ int main(int argc,char **argv){
     printf("%s\n",temp);itemp++;
     temp+=200;
   }
-  cudaMemcpy(dfileArray,fileArray,10*MAX_FILE_SIZE,cudaMemcpyHostToDevice);
+  cudaMemcpy(dfileArray,fileArray,10*MAX_FILE_SIZE*sizeof(char),cudaMemcpyHostToDevice);
   cudaMemcpy(dfileSize,fileSize,10*sizeof(int),cudaMemcpyHostToDevice);
-  getWordCounts<<<1,noOfFiles>>>(dfileArray,dcountArray,dfileSize,dhashtable);
+  getWordCounts<<<1,noOfFiles>>>(dfileArray,dcountArray,dfileSize,dhashtable,dnextPtr);
   cudaThreadSynchronize();
   cudaMemcpy(countArray,dcountArray,200*sizeof(int),cudaMemcpyDeviceToHost);
   cudaMemcpy(hashtable,dhashtable,20*200*sizeof(char),cudaMemcpyDeviceToHost);
