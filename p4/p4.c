@@ -83,7 +83,7 @@ do{
 			sum  =0 ;
 			for( temp = 0; result[ temp ]; temp++)
 			  {result[temp] = (result[temp] > 64 && result[temp] < 91) ? result[temp]+32 : result[temp]; sum+=result[temp];}
-			item.key = result;
+			item.key = strdup(result);
 			pthread_mutex_lock(&mtable);
 
 			//pintf("\nWord token:");myprintf("\t%d",sum);
@@ -232,7 +232,7 @@ int main(int argc, char **argv){
 //		pintf("\nAbout to read ");
 //		pintf(filename);
 
-		pthread_create(&p[pi],NULL,&getWordCounts,(void*)filename);
+		pthread_create(&p[pi],NULL,(void *)&getWordCounts,(void*)filename);
 		pi++;
 		task_threads++;
 
