@@ -53,17 +53,21 @@ void* getWordCounts(char *filename){
 	char delims[] = " .!";
 	char *result = NULL,*saveptr,res[20];
 	int temp,temp2;
+	cnode *cptr = NULL;
+	int id, sum;
 	ENTRY item;
 	ENTRY *found_item;
-	cnode *cptr = NULL;
 
+	if(strstr(filename,"1")!=NULL) id=1;
+	if(strstr(filename,"2")!=NULL) id=2;
 //	myprintf(filename,0);
 //	pintf("\nFile Read..");
 //	pintf(filename);
-
+do{
+	cptr = NULL;result = NULL;
 	fp = fopen(filename,"r");
 	if(fp == NULL) {
-	        perror("failed to open sample.txt");
+	        perror("failed to open ");perror(filename);
         	return ;//EXIT_FAILURE;
 	}
 	while (fgets(line, LINE_MAX +1, fp)) {
@@ -73,14 +77,17 @@ void* getWordCounts(char *filename){
 	
 		result = strtok_r( line, delims ,&saveptr);
 		while( result != NULL ) {
-//			pintf("\nWord token:");if(strcmp(result,"\n")==0)break;
+//			pintf("\nWord token:");
 //  			pintf( result );
-
-			item.key = result;
+			if(strcmp(result,"\n")==0)break;
+			sum  =0 ;
 			for( temp = 0; result[ temp ]; temp++)
-			  if(isupper(result[ temp ]))result[ temp ] = tolower( result[ temp] );
+			  {result[temp] = (result[temp] > 64 && result[temp] < 91) ? result[temp]+32 : result[temp]; sum+=result[temp];}
+			item.key = result;
 			pthread_mutex_lock(&mtable);
 
+			//pintf("\nWord token:");myprintf("\t%d",sum);
+  			//pintf(item.key);
 			if((found_item = hsearch(item,FIND))==NULL){ //No entry at this hash
 				cptr = (cnode*) malloc (sizeof(cnode));
 				strcpy(cptr->word,result);
@@ -101,6 +108,9 @@ void* getWordCounts(char *filename){
 				}
 			 	pthread_mutex_unlock(&order);
 //				pintf("\nReleasing lock");
+				//pintf("\nAdding to hash : ");
+//				pintf(item.key);
+//				pintf("|");myprintf(" %d",id);
 
 				hsearch(item,ENTER);//Cannot use compare and swap here as its internal to Hash
 				pthread_mutex_unlock(&mtable);
@@ -198,27 +208,33 @@ void* getWordCounts(char *filename){
     	}
 	fclose(fp);
 	free(filename);
+	filename = (char*) malloc (LINE_MAX * sizeof(char));
+	}while(scanf("%s",filename)!=EOF);
 //	pintf("\nClosing File");
 	return ;// EXIT_SUCCESS;
 }
 
 int main(int argc, char **argv){
-	char *filename;
 	int pi =0,i;
+	char *filename;
+	int task_threads = 0;
 	pthread_t p[MAX_FILES];
-	filename = (char*) malloc (LINE_MAX * sizeof(char));
+	//filename = (char*) malloc (LINE_MAX * sizeof(char));
 	hcreate(MAX_WORDS);
 	ENTRY item,*found_item;
 	cnode *ptr;
 	highest = NULL;
 	
-	while(scanf("%s",filename)!=EOF){
+	
+	while(task_threads<4){//ONLY TWO TASK THREADS 
+		filename = (char*) malloc (LINE_MAX * sizeof(char));
+		scanf("%s",filename);
 //		pintf("\nAbout to read ");
 //		pintf(filename);
 
 		pthread_create(&p[pi],NULL,&getWordCounts,(void*)filename);
-		filename = (char*) malloc (LINE_MAX * sizeof(char));
 		pi++;
+		task_threads++;
 
 		//printf("\nFound %s",filename);
 	}
