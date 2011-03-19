@@ -226,7 +226,7 @@ int main(int argc, char **argv){
 	highest = NULL;
 	
 	
-	while(task_threads<4){//ONLY TWO TASK THREADS 
+	while(task_threads<2){//ONLY TWO TASK THREADS 
 		filename = (char*) malloc (LINE_MAX * sizeof(char));
 		scanf("%s",filename);
 //		pintf("\nAbout to read ");
